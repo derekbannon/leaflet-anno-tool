@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaflet Annotation Tool</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+    <div id="toolbar">
+        <div class="toolbar-brand">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Annotator
+        </div>
+        <div class="toolbar-sep"></div>
+        <div class="toolbar-tools">
+            <button id="btn-select" class="tool-btn active" title="Select / Move  (V)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                    <path d="M4 0 L20 11 L13 12 L9 21 Z"/>
+                </svg>
+                Select
+            </button>
+            <button id="btn-add-callout" class="tool-btn" title="Add Callout  (C)">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                    <line x1="12" y1="8" x2="12" y2="14"/>
+                    <line x1="9" y1="11" x2="15" y2="11"/>
+                </svg>
+                Callout
+            </button>
+        </div>
+        <div class="toolbar-sep"></div>
+        <button id="btn-delete" class="tool-btn danger" title="Delete Selected  (Delete)" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+            </svg>
+            Delete
+        </button>
+        <div class="toolbar-spacer"></div>
+        <div class="toolbar-status" id="toolbar-status">Click "Callout" to add an annotation</div>
+    </div>
+
+    <div id="map"></div>
+
+    <!-- Properties Panel -->
+    <div id="props-panel" class="hidden">
+        <div class="props-header">
+            <span>Callout Properties</span>
+            <button id="btn-close-props" title="Deselect (Esc)">×</button>
+        </div>
+        <div class="props-body">
+
+            <div class="prop-section">
+                <div class="prop-section-title">Text</div>
+                <textarea id="prop-text" rows="3" placeholder="Annotation text…"></textarea>
+            </div>
+
+            <div class="prop-section">
+                <div class="prop-section-title">Typography</div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Font Size</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-font-size" min="8" max="72" value="14" step="1">
+                            <span>px</span>
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label>Text Color</label>
+                        <input type="color" id="prop-text-color" value="#1a1a1a" class="color-input">
+                    </div>
+                </div>
+            </div>
+
+            <div class="prop-section">
+                <div class="prop-section-title">Box</div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Background</label>
+                        <input type="color" id="prop-bg-color" value="#fffde7" class="color-input">
+                    </div>
+                    <div class="prop-group">
+                        <label>Border Color</label>
+                        <input type="color" id="prop-border-color" value="#5c5c5c" class="color-input">
+                    </div>
+                </div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Border Width</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-border-width" min="0" max="10" step="0.5" value="1.5">
+                            <span>px</span>
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label>Padding</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-padding" min="2" max="40" value="10" step="1">
+                            <span>px</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Width</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-box-width" min="60" max="600" value="160" step="10">
+                            <span>px</span>
+                        </div>
+                    </div>
+                    <div class="prop-group">
+                        <label>Height (0 = auto)</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-box-height" min="0" max="800" value="0" step="10">
+                            <span>px</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Corner Radius</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-corner-radius" min="0" max="30" value="4" step="1">
+                            <span>px</span>
+                        </div>
+                    </div>
+                    <div class="prop-group"></div>
+                </div>
+            </div>
+
+            <div class="prop-section">
+                <div class="prop-section-title">Leader &amp; Arrow</div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Color</label>
+                        <input type="color" id="prop-arrow-color" value="#5c5c5c" class="color-input">
+                    </div>
+                    <div class="prop-group">
+                        <label>Line Width</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-arrow-width" min="0.5" max="10" step="0.5" value="2">
+                            <span>px</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Arrow Size</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-arrow-size" min="4" max="40" step="1" value="12">
+                            <span>px</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Hint bar -->
+    <div id="hint-bar"><span id="hint-text"></span></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="js/leaflet-callout.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

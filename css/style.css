@@ -1,0 +1,334 @@
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+    height: 100vh;
+    background: #111;
+}
+
+/* ─── Toolbar ──────────────────────────────────────────── */
+#toolbar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 48px;
+    background: #16213e;
+    color: #e0e0e0;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 6px;
+    z-index: 1000;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.5);
+    user-select: none;
+}
+
+.toolbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 14px;
+    color: #90caf9;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+    padding-right: 4px;
+    flex-shrink: 0;
+}
+
+.toolbar-sep {
+    width: 1px;
+    height: 22px;
+    background: rgba(255,255,255,0.12);
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+
+.toolbar-spacer {
+    flex: 1;
+}
+
+.toolbar-tools {
+    display: flex;
+    gap: 3px;
+}
+
+.tool-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #90a4ae;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.14s, color 0.14s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.tool-btn:hover:not(:disabled) {
+    background: rgba(255,255,255,0.09);
+    color: #e0e0e0;
+}
+
+.tool-btn.active {
+    background: #1565c0;
+    color: #fff;
+}
+
+.tool-btn.active:hover {
+    background: #1976d2;
+    color: #fff;
+}
+
+.tool-btn.danger {
+    color: #ef9a9a;
+}
+
+.tool-btn.danger:hover:not(:disabled) {
+    background: rgba(229, 57, 53, 0.18);
+    color: #ef5350;
+}
+
+.tool-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.toolbar-status {
+    font-size: 12px;
+    color: #546e7a;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* ─── Map ──────────────────────────────────────────────── */
+#map {
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* ─── Properties Panel ─────────────────────────────────── */
+#props-panel {
+    position: absolute;
+    top: 60px;
+    right: 14px;
+    width: 252px;
+    background: #1a2340;
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 10px;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.55);
+    z-index: 900;
+    color: #cfd8dc;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 76px);
+    overflow: hidden;
+    transition: opacity 0.15s;
+}
+
+#props-panel.hidden {
+    display: none;
+}
+
+.props-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    background: #16213e;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    font-weight: 600;
+    font-size: 12.5px;
+    color: #90caf9;
+    flex-shrink: 0;
+    letter-spacing: 0.01em;
+}
+
+#btn-close-props {
+    background: none;
+    border: none;
+    color: #546e7a;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+    border-radius: 4px;
+    transition: color 0.14s;
+}
+
+#btn-close-props:hover {
+    color: #e0e0e0;
+}
+
+.props-body {
+    padding: 6px 12px 14px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.props-body::-webkit-scrollbar { width: 4px; }
+.props-body::-webkit-scrollbar-track { background: transparent; }
+.props-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+.prop-section {
+    margin-bottom: 12px;
+}
+
+.prop-section-title {
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #546e7a;
+    padding: 6px 0 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 8px;
+}
+
+.prop-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 7px;
+}
+
+.prop-row:last-child {
+    margin-bottom: 0;
+}
+
+.prop-group {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.prop-group label {
+    font-size: 11px;
+    color: #78909c;
+}
+
+.prop-group textarea {
+    width: 100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px;
+    color: #e0e0e0;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 6px 8px;
+    outline: none;
+    resize: vertical;
+    min-height: 58px;
+    transition: border-color 0.14s;
+    line-height: 1.45;
+}
+
+.prop-group textarea:focus {
+    border-color: #1565c0;
+}
+
+/* Number inputs with unit badge */
+.input-unit {
+    display: flex;
+    align-items: center;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px;
+    overflow: hidden;
+    transition: border-color 0.14s;
+}
+
+.input-unit:focus-within {
+    border-color: #1565c0;
+}
+
+.input-unit input[type="number"] {
+    flex: 1;
+    background: none;
+    border: none;
+    color: #e0e0e0;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 5px 6px 5px 8px;
+    outline: none;
+    min-width: 0;
+    width: 100%;
+}
+
+.input-unit span {
+    font-size: 11px;
+    color: #455a64;
+    padding: 0 7px 0 2px;
+    white-space: nowrap;
+}
+
+/* Color inputs */
+.color-input {
+    width: 100%;
+    height: 32px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px;
+    background: rgba(255,255,255,0.06);
+    cursor: pointer;
+    padding: 2px;
+    transition: border-color 0.14s;
+}
+
+.color-input:hover {
+    border-color: rgba(255,255,255,0.25);
+}
+
+/* Remove number spinners default chrome */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    opacity: 0.4;
+}
+
+/* ─── Hint Bar ─────────────────────────────────────────── */
+#hint-bar {
+    position: absolute;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(22, 33, 62, 0.88);
+    border: 1px solid rgba(144, 202, 249, 0.18);
+    color: #90caf9;
+    font-size: 12px;
+    padding: 6px 18px;
+    border-radius: 20px;
+    z-index: 900;
+    pointer-events: none;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+    transition: opacity 0.25s;
+}
+
+#hint-bar:empty,
+#hint-bar #hint-text:empty {
+    opacity: 0;
+}
+
+/* SVG handles rendered by the plugin */
+.callout-handle {
+    cursor: grab;
+}
+
+.callout-handle:active {
+    cursor: grabbing;
+}

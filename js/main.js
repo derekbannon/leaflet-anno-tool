@@ -1,0 +1,173 @@
+(function () {
+    'use strict';
+
+    // ── Map setup ─────────────────────────────────────────────────────
+    var map = L.map('map', {
+        center: [51.505, -0.09],
+        zoom: 13,
+        zoomControl: true
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+    }).addTo(map);
+
+    // ── Callout layer ─────────────────────────────────────────────────
+    var calloutLayer = L.calloutLayer().addTo(map);
+
+    // ── DOM refs ──────────────────────────────────────────────────────
+    var btnSelect      = document.getElementById('btn-select');
+    var btnAddCallout  = document.getElementById('btn-add-callout');
+    var btnDelete      = document.getElementById('btn-delete');
+    var propsPanel     = document.getElementById('props-panel');
+    var btnCloseProps  = document.getElementById('btn-close-props');
+    var toolbarStatus  = document.getElementById('toolbar-status');
+    var hintEl         = document.getElementById('hint-text');
+
+    var propText         = document.getElementById('prop-text');
+    var propFontSize     = document.getElementById('prop-font-size');
+    var propTextColor    = document.getElementById('prop-text-color');
+    var propBgColor      = document.getElementById('prop-bg-color');
+    var propBorderColor  = document.getElementById('prop-border-color');
+    var propBorderWidth  = document.getElementById('prop-border-width');
+    var propPadding      = document.getElementById('prop-padding');
+    var propBoxWidth     = document.getElementById('prop-box-width');
+    var propBoxHeight    = document.getElementById('prop-box-height');
+    var propCornerRadius = document.getElementById('prop-corner-radius');
+    var propArrowColor   = document.getElementById('prop-arrow-color');
+    var propArrowWidth   = document.getElementById('prop-arrow-width');
+    var propArrowSize    = document.getElementById('prop-arrow-size');
+
+    var currentMode = 'select';
+
+    // ── Mode management ───────────────────────────────────────────────
+    function setMode(mode) {
+        currentMode = mode;
+        calloutLayer.setMode(mode);
+
+        btnSelect.classList.toggle('active', mode === 'select');
+        btnAddCallout.classList.toggle('active', mode === 'add');
+
+        if (mode === 'add') {
+            toolbarStatus.textContent = 'Click on the map to place a callout';
+            hintEl.textContent = 'Click to place  •  Esc to cancel';
+        } else {
+            toolbarStatus.textContent = calloutLayer.getSelected()
+                ? 'Drag handles to reposition  •  Edit properties on the right'
+                : 'Click a callout to select it, or press C to add one';
+            hintEl.textContent = '';
+        }
+    }
+
+    // ── Properties panel ─────────────────────────────────────────────
+    function showProps(callout) {
+        if (!callout) {
+            propsPanel.classList.add('hidden');
+            btnDelete.disabled = true;
+            return;
+        }
+
+        propsPanel.classList.remove('hidden');
+        btnDelete.disabled = false;
+
+        var s = callout.style;
+        propText.value         = callout.text || '';
+        propFontSize.value     = s.fontSize;
+        propTextColor.value    = s.textColor;
+        propBgColor.value      = s.bgColor;
+        propBorderColor.value  = s.borderColor;
+        propBorderWidth.value  = s.borderWidth;
+        propPadding.value      = s.padding;
+        propBoxWidth.value     = s.boxWidth;
+        propBoxHeight.value    = s.boxHeight || 0;
+        propCornerRadius.value = s.cornerRadius;
+        propArrowColor.value   = s.arrowColor;
+        propArrowWidth.value   = s.arrowWidth;
+        propArrowSize.value    = s.arrowSize;
+    }
+
+    function collectStyle() {
+        return {
+            fontSize:     parseFloat(propFontSize.value)     || 14,
+            textColor:    propTextColor.value,
+            bgColor:      propBgColor.value,
+            borderColor:  propBorderColor.value,
+            borderWidth:  parseFloat(propBorderWidth.value)  || 1.5,
+            padding:      parseFloat(propPadding.value)      || 10,
+            boxWidth:     parseFloat(propBoxWidth.value)     || 160,
+            boxHeight:    parseFloat(propBoxHeight.value)    || 0,
+            cornerRadius: parseFloat(propCornerRadius.value) || 4,
+            arrowColor:   propArrowColor.value,
+            arrowWidth:   parseFloat(propArrowWidth.value)   || 2,
+            arrowSize:    parseFloat(propArrowSize.value)    || 12
+        };
+    }
+
+    // ── Toolbar buttons ───────────────────────────────────────────────
+    btnSelect.addEventListener('click', function () { setMode('select'); });
+    btnAddCallout.addEventListener('click', function () { setMode('add'); });
+
+    btnDelete.addEventListener('click', function () {
+        calloutLayer.deleteSelected();
+    });
+
+    btnCloseProps.addEventListener('click', function () {
+        calloutLayer.deselect();
+    });
+
+    // ── Callout selection event ───────────────────────────────────────
+    calloutLayer.on('calloutselect', function (e) {
+        showProps(e.callout);
+        if (e.callout) {
+            // Auto-switch to select mode after placing
+            if (currentMode === 'add') setMode('select');
+        } else {
+            setMode('select');
+        }
+    });
+
+    // ── Properties inputs → live update ──────────────────────────────
+    propText.addEventListener('input', function () {
+        calloutLayer.updateSelected({ text: propText.value });
+    });
+
+    function onStyleInput() {
+        calloutLayer.updateSelected({ style: collectStyle() });
+    }
+
+    [
+        propFontSize, propTextColor, propBgColor, propBorderColor,
+        propBorderWidth, propPadding, propBoxWidth, propBoxHeight,
+        propCornerRadius, propArrowColor, propArrowWidth, propArrowSize
+    ].forEach(function (el) {
+        el.addEventListener('input', onStyleInput);
+    });
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────
+    document.addEventListener('keydown', function (e) {
+        // Don't intercept when typing in an input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        switch (e.key) {
+            case 'Escape':
+                if (currentMode === 'add') setMode('select');
+                else calloutLayer.deselect();
+                break;
+            case 'Delete':
+            case 'Backspace':
+                calloutLayer.deleteSelected();
+                break;
+            case 'v': case 'V':
+                setMode('select');
+                break;
+            case 'c': case 'C':
+                setMode('add');
+                break;
+        }
+    });
+
+    // ── Initial state ─────────────────────────────────────────────────
+    setMode('select');
+
+}());
