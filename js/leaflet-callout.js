@@ -190,7 +190,11 @@
 
         _redrawAll: function () {
             var self = this;
-            this._callouts.forEach(function (c) { self._renderCallout(c); });
+            this._callouts.forEach(function (c) {
+                // Don't disrupt an active inline edit
+                if (self._editingCalloutId === c.id) return;
+                self._renderCallout(c);
+            });
         },
 
         _renderCallout: function (callout) {
@@ -311,6 +315,8 @@
                     if (isDbl) self._startInlineEdit(c);
                 };
             }(callout)));
+            // Prevent dblclick from reaching Leaflet's zoom handler
+            hit.addEventListener('dblclick', function (e) { e.stopPropagation(); e.preventDefault(); });
             hit.addEventListener('mousedown', (function (cid) {
                 return function (e) {
                     if (e.button !== 0) return;
@@ -490,7 +496,7 @@
             fo.appendChild(ta);
             group.appendChild(fo);
 
-            function autosize() {
+            this._editingCalloutId = callout.id;
                 ta.style.height = 'auto';
                 ta.style.height = ta.scrollHeight + 'px';
             }
@@ -511,6 +517,7 @@
             function commit() {
                 if (done) return;
                 done = true;
+                self._editingCalloutId = null;
                 callout.text = ta.value;
                 fo.remove();
                 if (textEl) textEl.style.visibility = '';
