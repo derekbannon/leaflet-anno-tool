@@ -299,9 +299,17 @@
             hit.setAttribute('width', boxW); hit.setAttribute('height', boxH);
             hit.setAttribute('fill', 'transparent');
             hit.style.pointerEvents = 'all'; hit.style.cursor = 'move';
-            hit.addEventListener('click',    function (e) { e.stopPropagation(); });
-            hit.addEventListener('dblclick', (function (c) {
-                return function (e) { e.stopPropagation(); e.preventDefault(); self._startInlineEdit(c); };
+            hit.addEventListener('click', (function (c) {
+                return function (e) {
+                    e.stopPropagation();
+                    // Custom double-click: comparing timestamps on self avoids
+                    // the browser's dblclick element-identity requirement
+                    var now = Date.now();
+                    var isDbl = (now - (self._lastClickMs || 0) < 350 && self._lastClickCid === c.id);
+                    self._lastClickMs  = now;
+                    self._lastClickCid = c.id;
+                    if (isDbl) self._startInlineEdit(c);
+                };
             }(callout)));
             hit.addEventListener('mousedown', (function (cid) {
                 return function (e) {
@@ -506,17 +514,20 @@
         },
 
         _selectCallout: function (id) {
+            // Skip re-render when already selected so the hitbox element stays
+            // stable — required for custom double-click detection to work
+            if (this._selectedId === id) {
+                this.fire('calloutselect', { callout: this._callouts.get(id) });
+                return;
+            }
             var prevId = this._selectedId;
             this._selectedId = id;
-
-            if (prevId !== null && prevId !== id) {
+            if (prevId !== null) {
                 var prev = this._callouts.get(prevId);
                 if (prev) this._renderCallout(prev);
             }
-
             var callout = this._callouts.get(id);
             if (callout) this._renderCallout(callout);
-
             this.fire('calloutselect', { callout: callout });
         },
 
