@@ -446,44 +446,83 @@
 
         _startInlineEdit: function (callout) {
             var self = this, s = callout.style;
-            var ap   = this._map.latLngToContainerPoint(callout.anchorLatLng);
-            var bx   = ap.x + callout.boxOffset.x, by = ap.y + callout.boxOffset.y;
+            var ap    = this._map.latLngToContainerPoint(callout.anchorLatLng);
+            var bx    = ap.x + callout.boxOffset.x;
+            var by    = ap.y + callout.boxOffset.y;
             var lines = this._wrapText(callout.text || '', s.fontSize, s.boxWidth - s.padding * 2);
             var boxW  = s.boxWidth;
             var boxH  = (s.boxHeight > 0) ? s.boxHeight : (s.padding * 2 + lines.length * s.fontSize * 1.4);
-            var bLeft = bx - boxW / 2, bTop = by - boxH / 2;
-            var mr    = this._map.getContainer().getBoundingClientRect();
-            var ta    = document.createElement('textarea');
-            ta.value  = callout.text || '';
+            var bLeft = bx - boxW / 2;
+            var bTop  = by - boxH / 2;
+
+            var group = this._svg.querySelector('[data-cid="' + callout.id + '"]');
+            if (!group) return;
+
+            // Hide SVG text so the transparent textarea shows through
+            var textEl = group.querySelector('text');
+            if (textEl) textEl.style.visibility = 'hidden';
+
+            // foreignObject sits exactly over the text area inside the box
+            var fo = this._svgEl('foreignObject');
+            fo.setAttribute('x',     bLeft + s.padding);
+            fo.setAttribute('y',     bTop  + s.padding);
+            fo.setAttribute('width', boxW  - s.padding * 2);
+            // Extra height so auto-growing text isn't clipped while typing
+            fo.setAttribute('height', Math.max(boxH - s.padding * 2, s.fontSize * 2) + 400);
+            fo.style.overflow      = 'visible';
+            fo.style.pointerEvents = 'none';
+
+            var ta = document.createElement('textarea');
+            ta.value = callout.text || '';
             ta.style.cssText = [
-                'position:fixed',
-                'left:'+(mr.left+bLeft+s.padding)+'px', 'top:'+(mr.top+bTop+s.padding)+'px',
-                'width:'+(boxW-s.padding*2)+'px', 'min-height:'+Math.round(s.fontSize*1.5)+'px',
-                'background:'+s.bgColor, 'color:'+s.textColor, 'font-size:'+s.fontSize+'px',
+                'display:block', 'width:100%', 'height:auto',
+                'min-height:' + Math.round(s.fontSize * 1.4) + 'px',
+                'background:transparent',
+                'color:' + s.textColor,
+                'font-size:' + s.fontSize + 'px',
                 "font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif",
-                'line-height:1.4', 'border:2px solid #1976d2',
-                'border-radius:'+Math.max(0,s.cornerRadius-2)+'px',
-                'padding:0', 'resize:none', 'outline:none', 'overflow:hidden',
-                'z-index:9999', 'box-shadow:0 2px 8px rgba(25,118,210,0.4)'
+                'line-height:1.4',
+                'border:none', 'outline:none', 'resize:none', 'overflow:hidden',
+                'padding:0', 'margin:0', 'box-sizing:border-box',
+                'pointer-events:all', 'cursor:text', 'caret-color:' + s.textColor
             ].join(';');
-            document.body.appendChild(ta);
-            ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
-            function autosize() { ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; }
-            autosize();
-            ta.addEventListener('input', function () { autosize(); callout.text=ta.value; self._renderCallout(callout); });
+
+            fo.appendChild(ta);
+            group.appendChild(fo);
+
+            function autosize() {
+                ta.style.height = 'auto';
+                ta.style.height = ta.scrollHeight + 'px';
+            }
+
+            ta.addEventListener('input', function () {
+                autosize();
+                callout.text = ta.value;
+            });
+
+            // Defer focus so the SVG rendering settles first
+            setTimeout(function () {
+                ta.focus();
+                ta.setSelectionRange(ta.value.length, ta.value.length);
+                autosize();
+            }, 0);
+
             var done = false;
             function commit() {
-                if (done) return; done = true;
+                if (done) return;
+                done = true;
                 callout.text = ta.value;
-                if (document.body.contains(ta)) document.body.removeChild(ta);
+                fo.remove();
+                if (textEl) textEl.style.visibility = '';
                 self._renderCallout(callout);
                 self._scheduleHistoryPush();
                 self.fire('calloutselect', { callout: callout });
             }
+
             ta.addEventListener('blur', commit);
             ta.addEventListener('keydown', function (e) {
                 e.stopPropagation();
-                if (e.key === 'Escape') { ta.value = callout.text; commit(); }
+                if (e.key === 'Escape') { callout.text = ta.value; commit(); }
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit();
             });
         },
