@@ -497,6 +497,8 @@
             group.appendChild(fo);
 
             this._editingCalloutId = callout.id;
+
+            function autosize() {
                 ta.style.height = 'auto';
                 ta.style.height = ta.scrollHeight + 'px';
             }
