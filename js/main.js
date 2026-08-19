@@ -43,6 +43,8 @@
     var propLeaderStyle  = document.getElementById('prop-leader-style');
     var propElbowLength  = document.getElementById('prop-elbow-length');
     var elbowLengthRow   = document.getElementById('elbow-length-row');
+    var propShowLeader   = document.getElementById('prop-show-leader');
+    var propRotation     = document.getElementById('prop-rotation');
     var importFile       = document.getElementById('import-file');
 
     var currentMode = 'select';
@@ -93,6 +95,8 @@
         propArrowSize.value    = s.arrowSize;
         propLeaderStyle.value  = s.leaderStyle  || 'elbow';
         propElbowLength.value  = s.elbowLength  || 20;
+        propShowLeader.checked = s.showLeader !== false;
+        propRotation.value     = s.rotation     || 0;
         elbowLengthRow.style.display = (propLeaderStyle.value === 'elbow') ? '' : 'none';
     }
 
@@ -111,7 +115,9 @@
             arrowWidth:   parseFloat(propArrowWidth.value)   || 2,
             arrowSize:    parseFloat(propArrowSize.value)    || 12,
             leaderStyle:  propLeaderStyle.value,
-            elbowLength:  parseFloat(propElbowLength.value)  || 20
+            elbowLength:  parseFloat(propElbowLength.value)  || 20,
+            showLeader:   propShowLeader.checked,
+            rotation:     parseFloat(propRotation.value)     || 0
         };
     }
 
@@ -171,6 +177,9 @@
     ].forEach(function (el) {
         el.addEventListener('input', onStyleInput);
     });
+
+    propShowLeader.addEventListener('change', onStyleInput);
+    propRotation.addEventListener('input', onStyleInput);
 
     // ── Keyboard shortcuts ────────────────────────────────────────────
     document.addEventListener('keydown', function (e) {

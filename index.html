@@ -154,6 +154,12 @@
             <div class="prop-section">
                 <div class="prop-section-title">Leader &amp; Arrow</div>
                 <div class="prop-row">
+                    <div class="prop-group" style="flex-direction:row;align-items:center;gap:8px;">
+                        <input type="checkbox" id="prop-show-leader" checked style="cursor:pointer;accent-color:#1565c0;width:15px;height:15px;">
+                        <label for="prop-show-leader" style="cursor:pointer;">Show Leader</label>
+                    </div>
+                </div>
+                <div class="prop-row">
                     <div class="prop-group">
                         <label>Color</label>
                         <input type="color" id="prop-arrow-color" value="#5c5c5c" class="color-input">
@@ -194,6 +200,20 @@
                         <div class="input-unit">
                             <input type="number" id="prop-elbow-length" min="5" max="120" value="20" step="5">
                             <span>px</span>
+                        </div>
+                    </div>
+                    <div class="prop-group"></div>
+                </div>
+            </div>
+
+            <div class="prop-section">
+                <div class="prop-section-title">Transform</div>
+                <div class="prop-row">
+                    <div class="prop-group">
+                        <label>Rotation</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-rotation" min="-180" max="180" value="0" step="1">
+                            <span>&deg;</span>
                         </div>
                     </div>
                     <div class="prop-group"></div>

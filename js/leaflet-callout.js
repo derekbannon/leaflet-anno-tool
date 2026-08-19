@@ -29,7 +29,9 @@
                 boxHeight:    0,
                 cornerRadius: 4,
                 leaderStyle:  'elbow',
-                elbowLength:  20
+                elbowLength:  20,
+                showLeader:   true,
+                rotation:     0
             }
         },
 
@@ -217,6 +219,8 @@
             var boxH  = (s.boxHeight > 0) ? s.boxHeight : (s.padding * 2 + lines.length * lineH);
             var bLeft = bx - boxW / 2;
             var bTop  = by - boxH / 2;
+            var rotation = s.rotation || 0;
+            var angleRad = rotation * Math.PI / 180;
 
             var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('data-cid', callout.id);
@@ -225,40 +229,64 @@
             var markerId = 'callout-arrow-' + callout.id;
             this._setArrowMarker(markerId, s.arrowColor, s.arrowSize);
 
-            // ── Leader: straight or elbow (Adobe-style) ───────────────
-            var ep   = this._boxEdgePoint(ap, bx, by, boxW, boxH);
-            var dist = Math.hypot(ap.x - ep.x, ap.y - ep.y);
-
-            if (dist > s.arrowSize * 0.6) {
-                if (s.leaderStyle === 'elbow') {
-                    var el  = s.elbowLength || 20;
-                    var edx = ep.x - bx, edy = ep.y - by;
-                    var elbow = (Math.abs(edx) >= Math.abs(edy))
-                        ? { x: ep.x + (edx > 0 ? el : -el), y: ep.y }
-                        : { x: ep.x, y: ep.y + (edy > 0 ? el : -el) };
-                    var pline = this._svgEl('polyline');
-                    pline.setAttribute('points',       ep.x+','+ep.y+' '+elbow.x+','+elbow.y+' '+ap.x+','+ap.y);
-                    pline.setAttribute('stroke',       s.arrowColor);
-                    pline.setAttribute('stroke-width', s.arrowWidth);
-                    pline.setAttribute('fill',         'none');
-                    pline.setAttribute('marker-end',   'url(#' + markerId + ')');
-                    g.appendChild(pline);
+            // ── Leader (respects showLeader and rotation) ──────────────
+            if (s.showLeader !== false) {
+                var ep, elbow;
+                if (rotation !== 0) {
+                    // Transform anchor into box-local frame to find edge, then rotate back
+                    var apLocal = this._rotatePoint(ap, bx, by, -angleRad);
+                    var epLocal = this._boxEdgePoint(apLocal, bx, by, boxW, boxH);
+                    ep = this._rotatePoint(epLocal, bx, by, angleRad);
+                    if (s.leaderStyle === 'elbow') {
+                        var el  = s.elbowLength || 20;
+                        var ldx = epLocal.x - bx, ldy = epLocal.y - by;
+                        var elbLocal = (Math.abs(ldx) >= Math.abs(ldy))
+                            ? { x: epLocal.x + (ldx > 0 ? el : -el), y: epLocal.y }
+                            : { x: epLocal.x, y: epLocal.y + (ldy > 0 ? el : -el) };
+                        elbow = this._rotatePoint(elbLocal, bx, by, angleRad);
+                    }
                 } else {
-                    var leader = this._svgEl('line');
-                    leader.setAttribute('x1', ep.x);  leader.setAttribute('y1', ep.y);
-                    leader.setAttribute('x2', ap.x);  leader.setAttribute('y2', ap.y);
-                    leader.setAttribute('stroke', s.arrowColor);
-                    leader.setAttribute('stroke-width', s.arrowWidth);
-                    leader.setAttribute('marker-end', 'url(#' + markerId + ')');
-                    g.appendChild(leader);
+                    ep = this._boxEdgePoint(ap, bx, by, boxW, boxH);
+                    if (s.leaderStyle === 'elbow') {
+                        var el2 = s.elbowLength || 20;
+                        var edx = ep.x - bx, edy = ep.y - by;
+                        elbow = (Math.abs(edx) >= Math.abs(edy))
+                            ? { x: ep.x + (edx > 0 ? el2 : -el2), y: ep.y }
+                            : { x: ep.x, y: ep.y + (edy > 0 ? el2 : -el2) };
+                    }
                 }
-                var dot = this._svgEl('circle');
-                dot.setAttribute('cx', ep.x); dot.setAttribute('cy', ep.y);
-                dot.setAttribute('r', s.arrowWidth + 1); dot.setAttribute('fill', s.arrowColor);
-                g.appendChild(dot);
+                var dist = Math.hypot(ap.x - ep.x, ap.y - ep.y);
+                if (dist > s.arrowSize * 0.6) {
+                    if (s.leaderStyle === 'elbow' && elbow) {
+                        var pline = this._svgEl('polyline');
+                        pline.setAttribute('points', ep.x+','+ep.y+' '+elbow.x+','+elbow.y+' '+ap.x+','+ap.y);
+                        pline.setAttribute('stroke', s.arrowColor);
+                        pline.setAttribute('stroke-width', s.arrowWidth);
+                        pline.setAttribute('fill', 'none');
+                        pline.setAttribute('marker-end', 'url(#' + markerId + ')');
+                        g.appendChild(pline);
+                    } else {
+                        var leader = this._svgEl('line');
+                        leader.setAttribute('x1', ep.x); leader.setAttribute('y1', ep.y);
+                        leader.setAttribute('x2', ap.x); leader.setAttribute('y2', ap.y);
+                        leader.setAttribute('stroke', s.arrowColor);
+                        leader.setAttribute('stroke-width', s.arrowWidth);
+                        leader.setAttribute('marker-end', 'url(#' + markerId + ')');
+                        g.appendChild(leader);
+                    }
+                    var dot = this._svgEl('circle');
+                    dot.setAttribute('cx', ep.x); dot.setAttribute('cy', ep.y);
+                    dot.setAttribute('r', s.arrowWidth + 1); dot.setAttribute('fill', s.arrowColor);
+                    g.appendChild(dot);
+                }
             }
 
-            // ── Box ───────────────────────────────────────────────────
+            // ── Box sub-group (carries the rotation transform) ─────────
+            var boxG = this._svgEl('g');
+            if (rotation !== 0) {
+                boxG.setAttribute('transform', 'rotate(' + rotation + ',' + bx + ',' + by + ')');
+            }
+
             var box = this._svgEl('rect');
             box.setAttribute('x', bLeft); box.setAttribute('y', bTop);
             box.setAttribute('width', boxW); box.setAttribute('height', boxH);
@@ -266,12 +294,12 @@
             box.setAttribute('stroke',       isSelected ? '#1976d2' : s.borderColor);
             box.setAttribute('stroke-width', isSelected ? Math.max(s.borderWidth, 2.5) : s.borderWidth);
             if (isSelected) box.setAttribute('filter', 'drop-shadow(0 2px 8px rgba(25,118,210,0.45))');
-            g.appendChild(box);
+            boxG.appendChild(box);
 
-            // ── Clip path when height is fixed ────────────────────────
+            // Clip only when height is fixed and not rotated (rotation breaks clip-path coords)
             var clipId = 'callout-clip-' + callout.id;
             this._removeMarker(clipId);
-            if (s.boxHeight > 0) {
+            if (s.boxHeight > 0 && rotation === 0) {
                 var cp = this._svgEl('clipPath'); cp.setAttribute('id', clipId);
                 var cr = this._svgEl('rect');
                 cr.setAttribute('x', bLeft+1); cr.setAttribute('y', bTop+1);
@@ -279,14 +307,13 @@
                 cp.appendChild(cr); this._defs.appendChild(cp);
             }
 
-            // ── Text ──────────────────────────────────────────────────
             var textEl = this._svgEl('text');
             textEl.setAttribute('font-family', "system-ui,-apple-system,'Segoe UI',Arial,sans-serif");
             textEl.setAttribute('font-size', s.fontSize);
             textEl.setAttribute('fill', s.textColor);
             textEl.style.pointerEvents = 'none';
             textEl.style.userSelect    = 'none';
-            if (s.boxHeight > 0) textEl.setAttribute('clip-path', 'url(#' + clipId + ')');
+            if (s.boxHeight > 0 && rotation === 0) textEl.setAttribute('clip-path', 'url(#' + clipId + ')');
             for (var i = 0; i < lines.length; i++) {
                 var tspan = this._svgEl('tspan');
                 tspan.setAttribute('x', bLeft + s.padding);
@@ -294,9 +321,9 @@
                 tspan.textContent = lines[i].length ? lines[i] : '\u00A0';
                 textEl.appendChild(tspan);
             }
-            g.appendChild(textEl);
+            boxG.appendChild(textEl);
 
-            // ── Hit area (click, dblclick→inline edit, drag) ──────────
+            // Hit area inside boxG so rotation is handled by SVG transform
             var self = this;
             var hit  = this._svgEl('rect');
             hit.setAttribute('x', bLeft); hit.setAttribute('y', bTop);
@@ -306,8 +333,6 @@
             hit.addEventListener('click', (function (c) {
                 return function (e) {
                     e.stopPropagation();
-                    // Custom double-click: comparing timestamps on self avoids
-                    // the browser's dblclick element-identity requirement
                     var now = Date.now();
                     var isDbl = (now - (self._lastClickMs || 0) < 350 && self._lastClickCid === c.id);
                     self._lastClickMs  = now;
@@ -315,7 +340,6 @@
                     if (isDbl) self._startInlineEdit(c);
                 };
             }(callout)));
-            // Prevent dblclick from reaching Leaflet's zoom handler
             hit.addEventListener('dblclick', function (e) { e.stopPropagation(); e.preventDefault(); });
             hit.addEventListener('mousedown', (function (cid) {
                 return function (e) {
@@ -324,19 +348,10 @@
                     self._selectCallout(cid); self._startBoxDrag(e, cid);
                 };
             }(callout.id)));
-            g.appendChild(hit);
+            boxG.appendChild(hit);
 
-            // ── Selection handles ─────────────────────────────────────
+            // Corner + rotation handles (inside boxG so they rotate with the box)
             if (isSelected) {
-                // Blue  = anchor point
-                this._appendHandle(g, ap.x, ap.y, '#1976d2', (function (cid) {
-                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startAnchorDrag(e, cid); };
-                }(callout.id)));
-                // Orange = box centre
-                this._appendHandle(g, bx, by, '#f57c00', (function (cid) {
-                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startBoxDrag(e, cid); };
-                }(callout.id)));
-                // Purple squares = corner resize handles
                 var corners = [
                     { x: bLeft,        y: bTop,        cur: 'nwse-resize' },
                     { x: bLeft + boxW, y: bTop,        cur: 'nesw-resize' },
@@ -344,10 +359,40 @@
                     { x: bLeft + boxW, y: bTop + boxH, cur: 'nwse-resize' }
                 ];
                 for (var ci = 0; ci < corners.length; ci++) {
-                    this._appendCornerHandle(g, corners[ci].x, corners[ci].y, corners[ci].cur, (function (cid) {
+                    this._appendCornerHandle(boxG, corners[ci].x, corners[ci].y, corners[ci].cur, (function (cid) {
                         return function (e) { e.preventDefault(); e.stopPropagation(); self._startCornerResize(e, cid); };
                     }(callout.id)));
                 }
+                // Cyan rotation handle above box top-centre
+                var rhy = bTop - 22;
+                var rotLine = this._svgEl('line');
+                rotLine.setAttribute('x1', bx); rotLine.setAttribute('y1', bTop);
+                rotLine.setAttribute('x2', bx); rotLine.setAttribute('y2', rhy);
+                rotLine.setAttribute('stroke', '#00bcd4'); rotLine.setAttribute('stroke-width', 1.5);
+                rotLine.setAttribute('stroke-dasharray', '3,2'); rotLine.style.pointerEvents = 'none';
+                boxG.appendChild(rotLine);
+                var rotHandle = this._svgEl('circle');
+                rotHandle.setAttribute('cx', bx); rotHandle.setAttribute('cy', rhy);
+                rotHandle.setAttribute('r', 7);
+                rotHandle.setAttribute('fill', 'white');
+                rotHandle.setAttribute('stroke', '#00bcd4'); rotHandle.setAttribute('stroke-width', 2);
+                rotHandle.style.pointerEvents = 'all'; rotHandle.style.cursor = 'crosshair';
+                rotHandle.addEventListener('mousedown', (function (cid) {
+                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startRotateDrag(e, cid); };
+                }(callout.id)));
+                boxG.appendChild(rotHandle);
+            }
+
+            g.appendChild(boxG);
+
+            // Anchor and box-centre handles stay in screen space (outside boxG)
+            if (isSelected) {
+                this._appendHandle(g, ap.x, ap.y, '#1976d2', (function (cid) {
+                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startAnchorDrag(e, cid); };
+                }(callout.id)));
+                this._appendHandle(g, bx, by, '#f57c00', (function (cid) {
+                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startBoxDrag(e, cid); };
+                }(callout.id)));
             }
 
             return g;
@@ -422,6 +467,37 @@
             document.addEventListener('mouseup',   onUp);
         },
 
+        // Drag the cyan rotation handle to rotate the box around its centre.
+        _startRotateDrag: function (e, calloutId) {
+            var callout = this._callouts.get(calloutId);
+            if (!callout) return;
+            this._map.dragging.disable();
+            var mapRect = this._map.getContainer().getBoundingClientRect();
+            var self    = this;
+            function onMove(ev) {
+                var ap = self._map.latLngToContainerPoint(callout.anchorLatLng);
+                var bx = ap.x + callout.boxOffset.x;
+                var by = ap.y + callout.boxOffset.y;
+                var px = ev.clientX - mapRect.left;
+                var py = ev.clientY - mapRect.top;
+                // +90° offset because the handle starts directly above the centre
+                var angle = Math.round(Math.atan2(py - by, px - bx) * 180 / Math.PI + 90);
+                if (angle > 180)  angle -= 360;
+                if (angle <= -180) angle += 360;
+                callout.style.rotation = angle;
+                self._renderCallout(callout);
+            }
+            function onUp() {
+                self._map.dragging.enable();
+                self._scheduleHistoryPush();
+                self.fire('calloutselect', { callout: callout });
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup',   onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup',   onUp);
+        },
+
         _startCornerResize: function (e, calloutId) {
             var callout = this._callouts.get(calloutId);
             if (!callout) return;
@@ -469,10 +545,14 @@
             if (textEl) textEl.style.visibility = 'hidden';
 
             // foreignObject sits exactly over the text area inside the box
+            var rotation = s.rotation || 0;
             var fo = this._svgEl('foreignObject');
             fo.setAttribute('x',     bLeft + s.padding);
             fo.setAttribute('y',     bTop  + s.padding);
             fo.setAttribute('width', boxW  - s.padding * 2);
+            if (rotation !== 0) {
+                fo.setAttribute('transform', 'rotate(' + rotation + ',' + bx + ',' + by + ')');
+            }
             // Extra height so auto-growing text isn't clipped while typing
             fo.setAttribute('height', Math.max(boxH - s.padding * 2, s.fontSize * 2) + 400);
             fo.style.overflow      = 'visible';
@@ -534,6 +614,13 @@
                 if (e.key === 'Escape') { callout.text = ta.value; commit(); }
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit();
             });
+        },
+
+        // Rotates point p around centre (cx, cy) by angleRad radians.
+        _rotatePoint: function (p, cx, cy, angleRad) {
+            var cos = Math.cos(angleRad), sin = Math.sin(angleRad);
+            var dx = p.x - cx, dy = p.y - cy;
+            return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
         },
 
         // Finds the point on the box border nearest to the anchor.
