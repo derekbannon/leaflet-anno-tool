@@ -14,12 +14,14 @@
     }).addTo(map);
 
     // ── Callout layer ─────────────────────────────────────────────────
-    var calloutLayer = L.calloutLayer().addTo(map);
+    var calloutLayer = L.calloutLayer({ storageKey: 'leaflet-callout-demo' }).addTo(map);
 
     // ── DOM refs ──────────────────────────────────────────────────────
     var btnSelect      = document.getElementById('btn-select');
     var btnAddCallout  = document.getElementById('btn-add-callout');
     var btnDelete      = document.getElementById('btn-delete');
+    var btnUndo        = document.getElementById('btn-undo');
+    var btnRedo        = document.getElementById('btn-redo');
     var propsPanel     = document.getElementById('props-panel');
     var btnCloseProps  = document.getElementById('btn-close-props');
     var toolbarStatus  = document.getElementById('toolbar-status');
@@ -38,6 +40,10 @@
     var propArrowColor   = document.getElementById('prop-arrow-color');
     var propArrowWidth   = document.getElementById('prop-arrow-width');
     var propArrowSize    = document.getElementById('prop-arrow-size');
+    var propLeaderStyle  = document.getElementById('prop-leader-style');
+    var propElbowLength  = document.getElementById('prop-elbow-length');
+    var elbowLengthRow   = document.getElementById('elbow-length-row');
+    var importFile       = document.getElementById('import-file');
 
     var currentMode = 'select';
 
@@ -85,6 +91,9 @@
         propArrowColor.value   = s.arrowColor;
         propArrowWidth.value   = s.arrowWidth;
         propArrowSize.value    = s.arrowSize;
+        propLeaderStyle.value  = s.leaderStyle  || 'elbow';
+        propElbowLength.value  = s.elbowLength  || 20;
+        elbowLengthRow.style.display = (propLeaderStyle.value === 'elbow') ? '' : 'none';
     }
 
     function collectStyle() {
@@ -100,36 +109,54 @@
             cornerRadius: parseFloat(propCornerRadius.value) || 4,
             arrowColor:   propArrowColor.value,
             arrowWidth:   parseFloat(propArrowWidth.value)   || 2,
-            arrowSize:    parseFloat(propArrowSize.value)    || 12
+            arrowSize:    parseFloat(propArrowSize.value)    || 12,
+            leaderStyle:  propLeaderStyle.value,
+            elbowLength:  parseFloat(propElbowLength.value)  || 20
         };
     }
 
     // ── Toolbar buttons ───────────────────────────────────────────────
     btnSelect.addEventListener('click', function () { setMode('select'); });
     btnAddCallout.addEventListener('click', function () { setMode('add'); });
+    btnDelete.addEventListener('click', function () { calloutLayer.deleteSelected(); });
+    btnCloseProps.addEventListener('click', function () { calloutLayer.deselect(); });
+    btnUndo.addEventListener('click', function () { calloutLayer.undo(); });
+    btnRedo.addEventListener('click', function () { calloutLayer.redo(); });
 
-    btnDelete.addEventListener('click', function () {
-        calloutLayer.deleteSelected();
+    document.getElementById('btn-export').addEventListener('click', function () {
+        calloutLayer.exportJSON();
     });
-
-    btnCloseProps.addEventListener('click', function () {
-        calloutLayer.deselect();
+    importFile.addEventListener('change', function () {
+        var file = this.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function (e) { calloutLayer.importJSON(e.target.result); };
+        reader.readAsText(file);
+        this.value = '';
     });
 
     // ── Callout selection event ───────────────────────────────────────
     calloutLayer.on('calloutselect', function (e) {
         showProps(e.callout);
         if (e.callout) {
-            // Auto-switch to select mode after placing
             if (currentMode === 'add') setMode('select');
         } else {
             setMode('select');
         }
     });
 
-    // ── Properties inputs → live update ──────────────────────────────
+    calloutLayer.on('historychange', function (e) {
+        btnUndo.disabled = !e.canUndo;
+        btnRedo.disabled = !e.canRedo;
+    });
+
+    // ── Properties inputs → live update ───────────────────────────────
     propText.addEventListener('input', function () {
         calloutLayer.updateSelected({ text: propText.value });
+    });
+    propLeaderStyle.addEventListener('change', function () {
+        elbowLengthRow.style.display = (this.value === 'elbow') ? '' : 'none';
+        calloutLayer.updateSelected({ style: collectStyle() });
     });
 
     function onStyleInput() {
@@ -139,31 +166,25 @@
     [
         propFontSize, propTextColor, propBgColor, propBorderColor,
         propBorderWidth, propPadding, propBoxWidth, propBoxHeight,
-        propCornerRadius, propArrowColor, propArrowWidth, propArrowSize
+        propCornerRadius, propArrowColor, propArrowWidth, propArrowSize,
+        propElbowLength
     ].forEach(function (el) {
         el.addEventListener('input', onStyleInput);
     });
 
     // ── Keyboard shortcuts ────────────────────────────────────────────
     document.addEventListener('keydown', function (e) {
-        // Don't intercept when typing in an input
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); calloutLayer.undo(); return; }
+        if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); calloutLayer.redo(); return; }
         switch (e.key) {
             case 'Escape':
                 if (currentMode === 'add') setMode('select');
                 else calloutLayer.deselect();
                 break;
-            case 'Delete':
-            case 'Backspace':
-                calloutLayer.deleteSelected();
-                break;
-            case 'v': case 'V':
-                setMode('select');
-                break;
-            case 'c': case 'C':
-                setMode('add');
-                break;
+            case 'Delete': case 'Backspace': calloutLayer.deleteSelected(); break;
+            case 'v': case 'V': setMode('select'); break;
+            case 'c': case 'C': setMode('add'); break;
         }
     });
 

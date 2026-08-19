@@ -14,6 +14,7 @@
     L.CalloutLayer = L.Layer.extend({
 
         options: {
+            storageKey: null,
             defaultStyle: {
                 fontSize:     14,
                 textColor:    '#1a1a1a',
@@ -25,17 +26,22 @@
                 arrowWidth:   2,
                 arrowSize:    12,
                 boxWidth:     160,
-                boxHeight:    0,   // 0 = auto-fit text
-                cornerRadius: 4
+                boxHeight:    0,
+                cornerRadius: 4,
+                leaderStyle:  'elbow',
+                elbowLength:  20
             }
         },
 
         initialize: function (options) {
             L.setOptions(this, options);
-            this._callouts   = new Map();
-            this._nextId     = 1;
-            this._selectedId = null;
-            this._mode       = 'select';
+            this._callouts     = new Map();
+            this._nextId       = 1;
+            this._selectedId   = null;
+            this._mode         = 'select';
+            this._historyStack = [];
+            this._historyIndex = -1;
+            this._histTimer    = null;
         },
 
         onAdd: function (map) {
@@ -45,6 +51,11 @@
             map.on('move zoom', this._redrawAll, this);
             this._containerClickHandler = this._onContainerClick.bind(this);
             map.getContainer().addEventListener('click', this._containerClickHandler);
+            if (this.options.storageKey) {
+                var saved = localStorage.getItem(this.options.storageKey);
+                if (saved) { try { this._restoreFromSnapshot(JSON.parse(saved)); } catch (e) {} }
+            }
+            this._pushHistory();
         },
 
         onRemove: function (map) {
@@ -73,12 +84,14 @@
             if (this._selectedId === null) return;
             var id = this._selectedId;
             this._selectedId = null;
-
             var el = this._svg.querySelector('[data-cid="' + id + '"]');
             if (el) el.remove();
             this._removeMarker('callout-arrow-' + id);
+            this._removeMarker('callout-clip-'  + id);
             this._callouts.delete(id);
             this.fire('calloutselect', { callout: null });
+            this._pushHistory();
+            this._autoSave();
         },
 
         updateSelected: function (changes) {
@@ -88,10 +101,47 @@
             if (changes.text !== undefined) callout.text = changes.text;
             if (changes.style) Object.assign(callout.style, changes.style);
             this._renderCallout(callout);
+            this._scheduleHistoryPush();
         },
 
         getSelected: function () {
             return this._selectedId !== null ? this._callouts.get(this._selectedId) : null;
+        },
+
+        undo: function () {
+            if (this._historyIndex <= 0) return;
+            this._historyIndex--;
+            this._restoreFromSnapshot(this._historyStack[this._historyIndex]);
+            this._autoSave();
+            this._emitHistoryState();
+        },
+
+        redo: function () {
+            if (this._historyIndex >= this._historyStack.length - 1) return;
+            this._historyIndex++;
+            this._restoreFromSnapshot(this._historyStack[this._historyIndex]);
+            this._autoSave();
+            this._emitHistoryState();
+        },
+
+        canUndo: function () { return this._historyIndex > 0; },
+        canRedo: function () { return this._historyIndex < this._historyStack.length - 1; },
+
+        exportJSON: function () {
+            var data = JSON.stringify(this._serialize(), null, 2);
+            var blob = new Blob([data], { type: 'application/json' });
+            var url  = URL.createObjectURL(blob);
+            var a    = document.createElement('a');
+            a.href = url; a.download = 'callout-annotations.json'; a.click();
+            URL.revokeObjectURL(url);
+        },
+
+        importJSON: function (jsonString) {
+            try {
+                this._restoreFromSnapshot(JSON.parse(jsonString));
+                this._pushHistory();
+                this._autoSave();
+            } catch (e) { console.error('Callout import failed:', e); }
         },
 
         // ── Internal ───────────────────────────────────────────────────
@@ -154,19 +204,15 @@
         },
 
         _buildGroup: function (callout, ap, isSelected) {
-            var s = callout.style;
-            var bx = ap.x + callout.boxOffset.x;
-            var by = ap.y + callout.boxOffset.y;
-
-            // Word-wrap text to fit inside the box, then compute box height
-            var lineH    = s.fontSize * 1.4;
-            var boxW     = s.boxWidth;
-            var innerW   = boxW - s.padding * 2;
-            var lines    = this._wrapText(callout.text || '', s.fontSize, innerW);
-            var autoH    = s.padding * 2 + lines.length * lineH;
-            var boxH     = (s.boxHeight > 0) ? s.boxHeight : autoH;
-            var bLeft    = bx - boxW / 2;
-            var bTop     = by - boxH / 2;
+            var s    = callout.style;
+            var bx   = ap.x + callout.boxOffset.x;
+            var by   = ap.y + callout.boxOffset.y;
+            var lineH = s.fontSize * 1.4;
+            var boxW  = s.boxWidth;
+            var lines = this._wrapText(callout.text || '', s.fontSize, boxW - s.padding * 2);
+            var boxH  = (s.boxHeight > 0) ? s.boxHeight : (s.padding * 2 + lines.length * lineH);
+            var bLeft = bx - boxW / 2;
+            var bTop  = by - boxH / 2;
 
             var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
             g.setAttribute('data-cid', callout.id);
@@ -175,58 +221,58 @@
             var markerId = 'callout-arrow-' + callout.id;
             this._setArrowMarker(markerId, s.arrowColor, s.arrowSize);
 
-            // ── Leader line ───────────────────────────────────────────
+            // ── Leader: straight or elbow (Adobe-style) ───────────────
             var ep   = this._boxEdgePoint(ap, bx, by, boxW, boxH);
             var dist = Math.hypot(ap.x - ep.x, ap.y - ep.y);
 
             if (dist > s.arrowSize * 0.6) {
-                var leader = this._svgEl('line');
-                leader.setAttribute('x1', ep.x);
-                leader.setAttribute('y1', ep.y);
-                leader.setAttribute('x2', ap.x);
-                leader.setAttribute('y2', ap.y);
-                leader.setAttribute('stroke', s.arrowColor);
-                leader.setAttribute('stroke-width', s.arrowWidth);
-                leader.setAttribute('marker-end', 'url(#' + markerId + ')');
-                g.appendChild(leader);
-
-                // Small circle at the box-edge attach point
+                if (s.leaderStyle === 'elbow') {
+                    var el  = s.elbowLength || 20;
+                    var edx = ep.x - bx, edy = ep.y - by;
+                    var elbow = (Math.abs(edx) >= Math.abs(edy))
+                        ? { x: ep.x + (edx > 0 ? el : -el), y: ep.y }
+                        : { x: ep.x, y: ep.y + (edy > 0 ? el : -el) };
+                    var pline = this._svgEl('polyline');
+                    pline.setAttribute('points',       ep.x+','+ep.y+' '+elbow.x+','+elbow.y+' '+ap.x+','+ap.y);
+                    pline.setAttribute('stroke',       s.arrowColor);
+                    pline.setAttribute('stroke-width', s.arrowWidth);
+                    pline.setAttribute('fill',         'none');
+                    pline.setAttribute('marker-end',   'url(#' + markerId + ')');
+                    g.appendChild(pline);
+                } else {
+                    var leader = this._svgEl('line');
+                    leader.setAttribute('x1', ep.x);  leader.setAttribute('y1', ep.y);
+                    leader.setAttribute('x2', ap.x);  leader.setAttribute('y2', ap.y);
+                    leader.setAttribute('stroke', s.arrowColor);
+                    leader.setAttribute('stroke-width', s.arrowWidth);
+                    leader.setAttribute('marker-end', 'url(#' + markerId + ')');
+                    g.appendChild(leader);
+                }
                 var dot = this._svgEl('circle');
-                dot.setAttribute('cx', ep.x);
-                dot.setAttribute('cy', ep.y);
-                dot.setAttribute('r', s.arrowWidth + 1);
-                dot.setAttribute('fill', s.arrowColor);
+                dot.setAttribute('cx', ep.x); dot.setAttribute('cy', ep.y);
+                dot.setAttribute('r', s.arrowWidth + 1); dot.setAttribute('fill', s.arrowColor);
                 g.appendChild(dot);
             }
 
-            // ── Box background ────────────────────────────────────────
+            // ── Box ───────────────────────────────────────────────────
             var box = this._svgEl('rect');
-            box.setAttribute('x', bLeft);
-            box.setAttribute('y', bTop);
-            box.setAttribute('width', boxW);
-            box.setAttribute('height', boxH);
-            box.setAttribute('rx', s.cornerRadius);
-            box.setAttribute('fill', s.bgColor);
-            box.setAttribute('stroke', isSelected ? '#1976d2' : s.borderColor);
+            box.setAttribute('x', bLeft); box.setAttribute('y', bTop);
+            box.setAttribute('width', boxW); box.setAttribute('height', boxH);
+            box.setAttribute('rx', s.cornerRadius); box.setAttribute('fill', s.bgColor);
+            box.setAttribute('stroke',       isSelected ? '#1976d2' : s.borderColor);
             box.setAttribute('stroke-width', isSelected ? Math.max(s.borderWidth, 2.5) : s.borderWidth);
-            if (isSelected) {
-                box.setAttribute('filter', 'drop-shadow(0 2px 8px rgba(25,118,210,0.45))');
-            }
+            if (isSelected) box.setAttribute('filter', 'drop-shadow(0 2px 8px rgba(25,118,210,0.45))');
             g.appendChild(box);
 
-            // ── Clip text to box when height is fixed ─────────────────
+            // ── Clip path when height is fixed ────────────────────────
             var clipId = 'callout-clip-' + callout.id;
             this._removeMarker(clipId);
             if (s.boxHeight > 0) {
-                var clipPath = this._svgEl('clipPath');
-                clipPath.setAttribute('id', clipId);
-                var clipRect = this._svgEl('rect');
-                clipRect.setAttribute('x', bLeft + 1);
-                clipRect.setAttribute('y', bTop + 1);
-                clipRect.setAttribute('width',  boxW - 2);
-                clipRect.setAttribute('height', boxH - 2);
-                clipPath.appendChild(clipRect);
-                this._defs.appendChild(clipPath);
+                var cp = this._svgEl('clipPath'); cp.setAttribute('id', clipId);
+                var cr = this._svgEl('rect');
+                cr.setAttribute('x', bLeft+1); cr.setAttribute('y', bTop+1);
+                cr.setAttribute('width', boxW-2); cr.setAttribute('height', boxH-2);
+                cp.appendChild(cr); this._defs.appendChild(cp);
             }
 
             // ── Text ──────────────────────────────────────────────────
@@ -236,10 +282,7 @@
             textEl.setAttribute('fill', s.textColor);
             textEl.style.pointerEvents = 'none';
             textEl.style.userSelect    = 'none';
-            if (s.boxHeight > 0) {
-                textEl.setAttribute('clip-path', 'url(#' + clipId + ')');
-            }
-
+            if (s.boxHeight > 0) textEl.setAttribute('clip-path', 'url(#' + clipId + ')');
             for (var i = 0; i < lines.length; i++) {
                 var tspan = this._svgEl('tspan');
                 tspan.setAttribute('x', bLeft + s.padding);
@@ -249,50 +292,48 @@
             }
             g.appendChild(textEl);
 
-            // ── Hit area for mouse events ─────────────────────────────
+            // ── Hit area (click, dblclick→inline edit, drag) ──────────
             var self = this;
-            var hit = this._svgEl('rect');
-            hit.setAttribute('x', bLeft);
-            hit.setAttribute('y', bTop);
-            hit.setAttribute('width', boxW);
-            hit.setAttribute('height', boxH);
+            var hit  = this._svgEl('rect');
+            hit.setAttribute('x', bLeft); hit.setAttribute('y', bTop);
+            hit.setAttribute('width', boxW); hit.setAttribute('height', boxH);
             hit.setAttribute('fill', 'transparent');
-            hit.style.pointerEvents = 'all';
-            hit.style.cursor        = 'move';
-
-            hit.addEventListener('click', function (e) {
-                e.stopPropagation();
-            });
+            hit.style.pointerEvents = 'all'; hit.style.cursor = 'move';
+            hit.addEventListener('click',    function (e) { e.stopPropagation(); });
+            hit.addEventListener('dblclick', (function (c) {
+                return function (e) { e.stopPropagation(); e.preventDefault(); self._startInlineEdit(c); };
+            }(callout)));
             hit.addEventListener('mousedown', (function (cid) {
                 return function (e) {
                     if (e.button !== 0) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    self._selectCallout(cid);
-                    self._startBoxDrag(e, cid);
+                    e.preventDefault(); e.stopPropagation();
+                    self._selectCallout(cid); self._startBoxDrag(e, cid);
                 };
             }(callout.id)));
             g.appendChild(hit);
 
-            // ── Selection handles ────────────────────────────────────
+            // ── Selection handles ─────────────────────────────────────
             if (isSelected) {
-                // Blue handle = anchor point (moves the arrow tip on the map)
+                // Blue  = anchor point
                 this._appendHandle(g, ap.x, ap.y, '#1976d2', (function (cid) {
-                    return function (e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        self._startAnchorDrag(e, cid);
-                    };
+                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startAnchorDrag(e, cid); };
                 }(callout.id)));
-
-                // Orange handle = box center (repositions the callout box)
+                // Orange = box centre
                 this._appendHandle(g, bx, by, '#f57c00', (function (cid) {
-                    return function (e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        self._startBoxDrag(e, cid);
-                    };
+                    return function (e) { e.preventDefault(); e.stopPropagation(); self._startBoxDrag(e, cid); };
                 }(callout.id)));
+                // Purple squares = corner resize handles
+                var corners = [
+                    { x: bLeft,        y: bTop,        cur: 'nwse-resize' },
+                    { x: bLeft + boxW, y: bTop,        cur: 'nesw-resize' },
+                    { x: bLeft,        y: bTop + boxH, cur: 'nesw-resize' },
+                    { x: bLeft + boxW, y: bTop + boxH, cur: 'nwse-resize' }
+                ];
+                for (var ci = 0; ci < corners.length; ci++) {
+                    this._appendCornerHandle(g, corners[ci].x, corners[ci].y, corners[ci].cur, (function (cid) {
+                        return function (e) { e.preventDefault(); e.stopPropagation(); self._startCornerResize(e, cid); };
+                    }(callout.id)));
+                }
             }
 
             return g;
@@ -300,83 +341,146 @@
 
         _appendHandle: function (g, cx, cy, color, onMousedown) {
             var ring = this._svgEl('circle');
-            ring.setAttribute('cx', cx);
-            ring.setAttribute('cy', cy);
-            ring.setAttribute('r', 8);
-            ring.setAttribute('fill', 'white');
-            ring.setAttribute('stroke', color);
+            ring.setAttribute('cx', cx); ring.setAttribute('cy', cy); ring.setAttribute('r', 8);
+            ring.setAttribute('fill', 'white'); ring.setAttribute('stroke', color);
             ring.setAttribute('stroke-width', 2.5);
-            ring.style.pointerEvents = 'all';
-            ring.style.cursor        = 'grab';
-            ring.addEventListener('mousedown', onMousedown);
-            g.appendChild(ring);
-
+            ring.style.pointerEvents = 'all'; ring.style.cursor = 'grab';
+            ring.addEventListener('mousedown', onMousedown); g.appendChild(ring);
             var dot = this._svgEl('circle');
-            dot.setAttribute('cx', cx);
-            dot.setAttribute('cy', cy);
-            dot.setAttribute('r', 4);
-            dot.setAttribute('fill', color);
-            dot.style.pointerEvents = 'none';
+            dot.setAttribute('cx', cx); dot.setAttribute('cy', cy); dot.setAttribute('r', 4);
+            dot.setAttribute('fill', color); dot.style.pointerEvents = 'none';
             g.appendChild(dot);
+        },
+
+        _appendCornerHandle: function (g, cx, cy, cursor, onMousedown) {
+            var sq = this._svgEl('rect');
+            sq.setAttribute('x', cx - 5); sq.setAttribute('y', cy - 5);
+            sq.setAttribute('width', 10); sq.setAttribute('height', 10);
+            sq.setAttribute('fill', 'white'); sq.setAttribute('stroke', '#7b1fa2');
+            sq.setAttribute('stroke-width', 2);
+            sq.style.pointerEvents = 'all'; sq.style.cursor = cursor;
+            sq.addEventListener('mousedown', onMousedown); g.appendChild(sq);
         },
 
         _startBoxDrag: function (e, calloutId) {
             var callout = this._callouts.get(calloutId);
             if (!callout) return;
-
             this._map.dragging.disable();
-            var startX = e.clientX;
-            var startY = e.clientY;
+            var startX = e.clientX, startY = e.clientY;
             var startOff = { x: callout.boxOffset.x, y: callout.boxOffset.y };
-            var moved = false;
-            var self = this;
-
+            var moved = false, self = this;
             function onMove(ev) {
-                var dx = ev.clientX - startX;
-                var dy = ev.clientY - startY;
+                var dx = ev.clientX - startX, dy = ev.clientY - startY;
                 if (!moved && Math.hypot(dx, dy) > 2) moved = true;
                 if (!moved) return;
                 callout.boxOffset = { x: startOff.x + dx, y: startOff.y + dy };
                 self._renderCallout(callout);
             }
-
             function onUp() {
                 self._map.dragging.enable();
+                if (moved) self._scheduleHistoryPush();
                 document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('mouseup',   onUp);
             }
-
             document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            document.addEventListener('mouseup',   onUp);
         },
 
         _startAnchorDrag: function (e, calloutId) {
             var callout = this._callouts.get(calloutId);
             if (!callout) return;
-
             this._map.dragging.disable();
             var mapRect = this._map.getContainer().getBoundingClientRect();
-            var self = this;
-
+            var moved = false, self = this;
             function onMove(ev) {
-                var px = ev.clientX - mapRect.left;
-                var py = ev.clientY - mapRect.top;
+                moved = true;
+                var px = ev.clientX - mapRect.left, py = ev.clientY - mapRect.top;
                 callout.anchorLatLng = self._map.containerPointToLatLng([px, py]);
                 self._renderCallout(callout);
             }
-
             function onUp() {
                 self._map.dragging.enable();
+                if (moved) self._scheduleHistoryPush();
                 document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('mouseup',   onUp);
             }
-
             document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
+            document.addEventListener('mouseup',   onUp);
         },
 
-        // Finds the point on the box border nearest to the anchor, along the
-        // ray from the box centre toward the anchor.
+        _startCornerResize: function (e, calloutId) {
+            var callout = this._callouts.get(calloutId);
+            if (!callout) return;
+            this._map.dragging.disable();
+            var mapRect = this._map.getContainer().getBoundingClientRect();
+            var self = this, s = callout.style;
+            if (!s.boxHeight) {
+                var l0 = self._wrapText(callout.text || '', s.fontSize, s.boxWidth - s.padding * 2);
+                s.boxHeight = Math.round(s.padding * 2 + l0.length * s.fontSize * 1.4);
+            }
+            function onMove(ev) {
+                var ap = self._map.latLngToContainerPoint(callout.anchorLatLng);
+                var px = ev.clientX - mapRect.left, py = ev.clientY - mapRect.top;
+                s.boxWidth  = Math.max(60, Math.round(2 * Math.abs(px - (ap.x + callout.boxOffset.x))));
+                s.boxHeight = Math.max(24, Math.round(2 * Math.abs(py - (ap.y + callout.boxOffset.y))));
+                self._renderCallout(callout);
+            }
+            function onUp() {
+                self._map.dragging.enable();
+                self._scheduleHistoryPush();
+                self.fire('calloutselect', { callout: callout });
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup',   onUp);
+            }
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup',   onUp);
+        },
+
+        _startInlineEdit: function (callout) {
+            var self = this, s = callout.style;
+            var ap   = this._map.latLngToContainerPoint(callout.anchorLatLng);
+            var bx   = ap.x + callout.boxOffset.x, by = ap.y + callout.boxOffset.y;
+            var lines = this._wrapText(callout.text || '', s.fontSize, s.boxWidth - s.padding * 2);
+            var boxW  = s.boxWidth;
+            var boxH  = (s.boxHeight > 0) ? s.boxHeight : (s.padding * 2 + lines.length * s.fontSize * 1.4);
+            var bLeft = bx - boxW / 2, bTop = by - boxH / 2;
+            var mr    = this._map.getContainer().getBoundingClientRect();
+            var ta    = document.createElement('textarea');
+            ta.value  = callout.text || '';
+            ta.style.cssText = [
+                'position:fixed',
+                'left:'+(mr.left+bLeft+s.padding)+'px', 'top:'+(mr.top+bTop+s.padding)+'px',
+                'width:'+(boxW-s.padding*2)+'px', 'min-height:'+Math.round(s.fontSize*1.5)+'px',
+                'background:'+s.bgColor, 'color:'+s.textColor, 'font-size:'+s.fontSize+'px',
+                "font-family:system-ui,-apple-system,'Segoe UI',Arial,sans-serif",
+                'line-height:1.4', 'border:2px solid #1976d2',
+                'border-radius:'+Math.max(0,s.cornerRadius-2)+'px',
+                'padding:0', 'resize:none', 'outline:none', 'overflow:hidden',
+                'z-index:9999', 'box-shadow:0 2px 8px rgba(25,118,210,0.4)'
+            ].join(';');
+            document.body.appendChild(ta);
+            ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
+            function autosize() { ta.style.height='auto'; ta.style.height=ta.scrollHeight+'px'; }
+            autosize();
+            ta.addEventListener('input', function () { autosize(); callout.text=ta.value; self._renderCallout(callout); });
+            var done = false;
+            function commit() {
+                if (done) return; done = true;
+                callout.text = ta.value;
+                if (document.body.contains(ta)) document.body.removeChild(ta);
+                self._renderCallout(callout);
+                self._scheduleHistoryPush();
+                self.fire('calloutselect', { callout: callout });
+            }
+            ta.addEventListener('blur', commit);
+            ta.addEventListener('keydown', function (e) {
+                e.stopPropagation();
+                if (e.key === 'Escape') { ta.value = callout.text; commit(); }
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) commit();
+            });
+        },
+
+        // Finds the point on the box border nearest to the anchor.
         _boxEdgePoint: function (anchor, bx, by, boxW, boxH) {
             var bLeft = bx - boxW / 2;
             var bTop  = by - boxH / 2;
@@ -486,6 +590,73 @@
 
         _svgEl: function (tag) {
             return document.createElementNS('http://www.w3.org/2000/svg', tag);
+        },
+
+        // ── History & Persistence ─────────────────────────────────────
+
+        _serialize: function () {
+            var data = [];
+            this._callouts.forEach(function (c) {
+                data.push({
+                    id:           c.id,
+                    anchorLatLng: { lat: c.anchorLatLng.lat, lng: c.anchorLatLng.lng },
+                    boxOffset:    { x: c.boxOffset.x, y: c.boxOffset.y },
+                    text:         c.text,
+                    style:        Object.assign({}, c.style)
+                });
+            });
+            return { callouts: data, nextId: this._nextId };
+        },
+
+        _restoreFromSnapshot: function (snapshot) {
+            var self = this;
+            this._callouts.forEach(function (c) {
+                var el = self._svg.querySelector('[data-cid="' + c.id + '"]');
+                if (el) el.remove();
+                self._removeMarker('callout-arrow-' + c.id);
+                self._removeMarker('callout-clip-'  + c.id);
+            });
+            this._callouts.clear();
+            this._selectedId = null;
+            this._nextId     = snapshot.nextId || 1;
+            (snapshot.callouts || []).forEach(function (d) {
+                var c = {
+                    id:           d.id,
+                    anchorLatLng: L.latLng(d.anchorLatLng.lat, d.anchorLatLng.lng),
+                    boxOffset:    { x: d.boxOffset.x, y: d.boxOffset.y },
+                    text:         d.text,
+                    style:        Object.assign({}, d.style)
+                };
+                self._callouts.set(d.id, c);
+                self._renderCallout(c);
+            });
+            this.fire('calloutselect', { callout: null });
+        },
+
+        _pushHistory: function () {
+            if (this._histTimer) { clearTimeout(this._histTimer); this._histTimer = null; }
+            this._historyStack = this._historyStack.slice(0, this._historyIndex + 1);
+            this._historyStack.push(this._serialize());
+            if (this._historyStack.length > 50) this._historyStack.shift();
+            else this._historyIndex++;
+            this._emitHistoryState();
+        },
+
+        _scheduleHistoryPush: function () {
+            var self = this;
+            if (this._histTimer) clearTimeout(this._histTimer);
+            this._histTimer = setTimeout(function () {
+                self._pushHistory(); self._autoSave();
+            }, 400);
+        },
+
+        _autoSave: function () {
+            if (!this.options.storageKey) return;
+            try { localStorage.setItem(this.options.storageKey, JSON.stringify(this._serialize())); } catch (e) {}
+        },
+
+        _emitHistoryState: function () {
+            this.fire('historychange', { canUndo: this.canUndo(), canRedo: this.canRedo() });
         }
 
     });

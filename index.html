@@ -41,6 +41,24 @@
             </svg>
             Delete
         </button>
+        <div class="toolbar-sep"></div>
+        <button id="btn-undo" class="tool-btn" title="Undo (Ctrl+Z)" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+            Undo
+        </button>
+        <button id="btn-redo" class="tool-btn" title="Redo (Ctrl+Y)" disabled>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
+            Redo
+        </button>
+        <div class="toolbar-sep"></div>
+        <button id="btn-export" class="tool-btn" title="Export annotations as JSON">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Export
+        </button>
+        <label class="tool-btn" title="Import annotations from JSON" style="cursor:pointer;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Import<input type="file" id="import-file" accept=".json" style="display:none">
+        </label>
         <div class="toolbar-spacer"></div>
         <div class="toolbar-status" id="toolbar-status">Click "Callout" to add an annotation</div>
     </div>
@@ -156,6 +174,29 @@
                             <span>px</span>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div class="prop-section">
+                <div class="prop-section-title">Leader Style</div>
+                <div class="prop-row">
+                    <div class="prop-group" style="flex:2">
+                        <label>Style</label>
+                        <select id="prop-leader-style" class="prop-select">
+                            <option value="elbow">Elbow (Adobe style)</option>
+                            <option value="straight">Straight</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="prop-row" id="elbow-length-row">
+                    <div class="prop-group">
+                        <label>Elbow Length</label>
+                        <div class="input-unit">
+                            <input type="number" id="prop-elbow-length" min="5" max="120" value="20" step="5">
+                            <span>px</span>
+                        </div>
+                    </div>
+                    <div class="prop-group"></div>
                 </div>
             </div>
 

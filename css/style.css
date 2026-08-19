@@ -300,6 +300,21 @@ input[type="number"]::-webkit-outer-spin-button {
     opacity: 0.4;
 }
 
+.prop-select {
+    width: 100%;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 5px;
+    color: #e0e0e0;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 5px 8px;
+    outline: none;
+    cursor: pointer;
+    appearance: auto;
+}
+.prop-select:focus { border-color: #1565c0; }
+
 /* ─── Hint Bar ─────────────────────────────────────────── */
 #hint-bar {
     position: absolute;
